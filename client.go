@@ -471,10 +471,10 @@ func (c *Client) Unregister(procedure string) error {
 }
 
 // Publish publishes an EVENT to all subscribed peers.
-func (c *Client) Publish(topic string, args []interface{}, kwargs map[string]interface{}) error {
+func (c *Client) Publish(topic string, options map[string]interface{}, args []interface{}, kwargs map[string]interface{}) error {
 	return c.Send(&Publish{
 		Request:     NewID(),
-		Options:     make(map[string]interface{}),
+		Options:     options,
 		Topic:       URI(topic),
 		Arguments:   args,
 		ArgumentsKw: kwargs,
