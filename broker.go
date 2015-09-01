@@ -12,6 +12,7 @@ type Broker interface {
 
 // A super simple broker that matches URIs to Subscribers.
 type defaultBroker struct {
+	options       map[URI]map[ID]map[string]interface{}
 	routes        map[URI]map[ID]Sender
 	subscriptions map[ID]URI
 }
@@ -19,6 +20,7 @@ type defaultBroker struct {
 // NewDefaultBroker initializes and returns a simple broker that matches URIs to Subscribers.
 func NewDefaultBroker() Broker {
 	return &defaultBroker{
+		options:       make(map[URI]map[ID]map[string]interface{}),
 		routes:        make(map[URI]map[ID]Sender),
 		subscriptions: make(map[ID]URI),
 	}
@@ -36,14 +38,25 @@ func (br *defaultBroker) Publish(pub Sender, msg *Publish) {
 		ArgumentsKw: msg.ArgumentsKw,
 		Details:     make(map[string]interface{}),
 	}
+
+subscriber:
 	for id, sub := range br.routes[msg.Topic] {
+		// don't send event to publisher
+		if sub == pub {
+			continue
+		}
+
+		subOptions := br.options[msg.Topic][id]
+		for option, pubValue := range msg.Options {
+			if subValue, ok := subOptions[option]; ok && subValue != pubValue {
+				continue subscriber
+			}
+		}
+
 		// shallow-copy the template
 		event := evtTemplate
 		event.Subscription = id
-		// don't send event to publisher
-		if sub != pub {
-			sub.Send(&event)
-		}
+		sub.Send(&event)
 	}
 
 	// only send published message if acknowledge is present and set to true
@@ -54,11 +67,20 @@ func (br *defaultBroker) Publish(pub Sender, msg *Publish) {
 
 // Subscribe subscribes the client to the given topic.
 func (br *defaultBroker) Subscribe(sub Sender, msg *Subscribe) {
-	if _, ok := br.routes[msg.Topic]; !ok {
-		br.routes[msg.Topic] = make(map[ID]Sender)
-	}
 	id := NewID()
-	br.routes[msg.Topic][id] = sub
+	route, ok := br.routes[msg.Topic]
+	if !ok {
+		br.routes[msg.Topic] = make(map[ID]Sender)
+		route = br.routes[msg.Topic]
+	}
+	route[id] = sub
+
+	option, ok := br.options[msg.Topic]
+	if !ok {
+		br.options[msg.Topic] = make(map[ID]map[string]interface{})
+		option = br.options[msg.Topic]
+	}
+	option[id] = msg.Options
 
 	br.subscriptions[id] = msg.Topic
 
@@ -79,6 +101,7 @@ func (br *defaultBroker) Unsubscribe(sub Sender, msg *Unsubscribe) {
 	}
 	delete(br.subscriptions, msg.Subscription)
 
+	// clean up routes
 	if r, ok := br.routes[topic]; !ok {
 		log.Printf("Error unsubscribing: unable to find routes for %s topic", topic)
 	} else if _, ok := r[msg.Subscription]; !ok {
@@ -89,5 +112,18 @@ func (br *defaultBroker) Unsubscribe(sub Sender, msg *Unsubscribe) {
 			delete(br.routes, topic)
 		}
 	}
+
+	// clean up options
+	if o, ok := br.options[topic]; !ok {
+		log.Printf("Error unsubscribing: unable to find options for %s topic", topic)
+	} else if _, ok := o[msg.Subscription]; !ok {
+		log.Printf("Error unsubscribing: %s options does not exist for %v subscription", topic, msg.Subscription)
+	} else {
+		delete(o, msg.Subscription)
+		if len(o) == 0 {
+			delete(br.options, topic)
+		}
+	}
+
 	sub.Send(&Unsubscribed{Request: msg.Request})
 }
