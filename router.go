@@ -37,8 +37,8 @@ type Router interface {
 	Close() error
 	RegisterRealm(URI, Realm) error
 	GetLocalPeer(URI, map[string]interface{}) (Peer, error)
-	AddSessionOpenCallback(func(uint, string))
-	AddSessionCloseCallback(func(uint, string))
+	AddSessionOpenCallback(func(uint, string, map[string]interface{}))
+	AddSessionCloseCallback(func(uint, string, map[string]interface{}))
 }
 
 // DefaultRouter is the default WAMP router implementation.
@@ -46,24 +46,24 @@ type defaultRouter struct {
 	realms                map[URI]Realm
 	closing               bool
 	closeLock             sync.Mutex
-	sessionOpenCallbacks  []func(uint, string)
-	sessionCloseCallbacks []func(uint, string)
+	sessionOpenCallbacks  []func(uint, string, map[string]interface{})
+	sessionCloseCallbacks []func(uint, string, map[string]interface{})
 }
 
 // NewDefaultRouter creates a very basic WAMP router.
 func NewDefaultRouter() Router {
 	return &defaultRouter{
 		realms:                make(map[URI]Realm),
-		sessionOpenCallbacks:  []func(uint, string){},
-		sessionCloseCallbacks: []func(uint, string){},
+		sessionOpenCallbacks:  []func(uint, string, map[string]interface{}){},
+		sessionCloseCallbacks: []func(uint, string, map[string]interface{}){},
 	}
 }
 
-func (r *defaultRouter) AddSessionOpenCallback(fn func(uint, string)) {
+func (r *defaultRouter) AddSessionOpenCallback(fn func(uint, string, map[string]interface{})) {
 	r.sessionOpenCallbacks = append(r.sessionOpenCallbacks, fn)
 }
 
-func (r *defaultRouter) AddSessionCloseCallback(fn func(uint, string)) {
+func (r *defaultRouter) AddSessionCloseCallback(fn func(uint, string, map[string]interface{})) {
 	r.sessionCloseCallbacks = append(r.sessionCloseCallbacks, fn)
 }
 
@@ -141,13 +141,13 @@ func (r *defaultRouter) Accept(client Peer) error {
 
 		sess := Session{Peer: client, Id: welcome.Id, kill: make(chan URI, 1)}
 		for _, callback := range r.sessionOpenCallbacks {
-			go callback(uint(sess.Id), string(hello.Realm))
+			go callback(uint(sess.Id), string(hello.Realm), welcome.Details)
 		}
 		go func() {
 			realm.handleSession(sess, welcome.Details)
 			sess.Close()
 			for _, callback := range r.sessionCloseCallbacks {
-				go callback(uint(sess.Id), string(hello.Realm))
+				go callback(uint(sess.Id), string(hello.Realm), welcome.Details)
 			}
 		}()
 	}
