@@ -10,6 +10,8 @@ type Broker interface {
 	Subscribe(Sender, *Subscribe)
 	// Unsubscribes from messages on a URI.
 	Unsubscribe(Sender, *Unsubscribe)
+	// Removes all subscriptions of the subscriber.
+	RemoveSubscriber(Sender)
 }
 
 // A super simple broker that matches URIs to Subscribers.
@@ -18,6 +20,7 @@ type defaultBroker struct {
 	options       map[URI]map[ID]map[string]interface{}
 	routes        map[URI]map[ID]Sender
 	subscriptions map[ID]URI
+	senderSubs    map[Sender]map[ID]struct{}
 }
 
 // NewDefaultBroker initializes and returns a simple broker that matches URIs to Subscribers.
@@ -26,6 +29,7 @@ func NewDefaultBroker() Broker {
 		options:       make(map[URI]map[ID]map[string]interface{}),
 		routes:        make(map[URI]map[ID]Sender),
 		subscriptions: make(map[ID]URI),
+		senderSubs:    make(map[Sender]map[ID]struct{}),
 	}
 }
 
@@ -90,6 +94,13 @@ func (br *defaultBroker) Subscribe(sub Sender, msg *Subscribe) {
 	}
 	option[id] = msg.Options
 
+	subs, ok := br.senderSubs[sub]
+	if !ok {
+		subs = make(map[ID]struct{})
+		br.senderSubs[sub] = subs
+	}
+	subs[id] = struct{}{}
+
 	br.subscriptions[id] = msg.Topic
 
 	sub.Send(&Subscribed{Request: msg.Request, Subscription: id})
@@ -136,5 +147,51 @@ func (br *defaultBroker) Unsubscribe(sub Sender, msg *Unsubscribe) {
 		}
 	}
 
+	// clean up sender's subscription
+	if s, ok := br.senderSubs[sub]; !ok {
+		log.Println("Error unsubscribing: unable to find sender's subscriptions")
+	} else if _, ok := s[msg.Subscription]; !ok {
+		log.Printf("Error unsubscribing: sender does not contain %s subscription", msg.Subscription)
+	} else {
+		delete(s, msg.Subscription)
+		if len(s) == 0 {
+			delete(br.senderSubs, sub)
+		}
+	}
+
 	sub.Send(&Unsubscribed{Request: msg.Request})
+}
+
+func (br *defaultBroker) RemoveSubscriber(sub Sender) {
+	br.lock.Lock()
+	defer br.lock.Unlock()
+
+	for id, _ := range br.senderSubs[sub] {
+		topic, ok := br.subscriptions[id]
+		if !ok {
+			continue
+		}
+		delete(br.subscriptions, id)
+
+		// clean up routes
+		if r, ok := br.routes[topic]; ok {
+			if _, ok := r[id]; ok {
+				delete(r, id)
+				if len(r) == 0 {
+					delete(br.routes, topic)
+				}
+			}
+		}
+
+		// clean up options
+		if o, ok := br.options[topic]; ok {
+			if _, ok := o[id]; ok {
+				delete(o, id)
+				if len(o) == 0 {
+					delete(br.options, topic)
+				}
+			}
+		}
+	}
+	delete(br.senderSubs, sub)
 }

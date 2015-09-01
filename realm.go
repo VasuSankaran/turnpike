@@ -47,6 +47,8 @@ func (r *Realm) init() {
 }
 
 func (r *Realm) handleSession(sess Session, details map[string]interface{}) {
+	defer r.Broker.RemoveSubscriber(&sess)
+
 	c := sess.Receive()
 	// TODO: what happens if the realm is closed?
 
@@ -90,11 +92,11 @@ func (r *Realm) handleSession(sess Session, details map[string]interface{}) {
 
 		// Broker messages
 		case *Publish:
-			r.Broker.Publish(sess.Peer, msg)
+			r.Broker.Publish(&sess, msg)
 		case *Subscribe:
-			r.Broker.Subscribe(sess.Peer, msg)
+			r.Broker.Subscribe(&sess, msg)
 		case *Unsubscribe:
-			r.Broker.Unsubscribe(sess.Peer, msg)
+			r.Broker.Unsubscribe(&sess, msg)
 
 		// Dealer messages
 		case *Register:
