@@ -2,6 +2,7 @@ package turnpike
 
 import (
 	"fmt"
+	"net/http"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -34,6 +35,7 @@ func NewWebsocketPeer(serialization Serialization, url, origin string) (Peer, er
 func newWebsocketPeer(url, protocol, origin string, serializer Serializer, payloadType int) (Peer, error) {
 	dialer := websocket.Dialer{
 		Subprotocols: []string{protocol},
+		Proxy:        http.ProxyFromEnvironment,
 	}
 	conn, _, err := dialer.Dial(url, nil)
 	if err != nil {
