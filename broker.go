@@ -2,7 +2,8 @@ package turnpike
 
 import "sync"
 
-// A broker handles routing EVENTS from Publishers to Subscribers.
+// Broker is the interface implemented by an object that handles routing EVENTS
+// from Publishers to Subscribers.
 type Broker interface {
 	// Publishes a message to all Subscribers.
 	Publish(Sender, *Publish)
@@ -23,7 +24,8 @@ type defaultBroker struct {
 	senderSubs    map[Sender]map[ID]struct{}
 }
 
-// NewDefaultBroker initializes and returns a simple broker that matches URIs to Subscribers.
+// NewDefaultBroker initializes and returns a simple broker that matches URIs to
+// Subscribers.
 func NewDefaultBroker() Broker {
 	return &defaultBroker{
 		options:       make(map[URI]map[ID]map[string]interface{}),
@@ -38,9 +40,9 @@ func NewDefaultBroker() Broker {
 // If msg.Options["acknowledge"] == true, the publisher receives a Published event
 // after the message has been sent to all subscribers.
 func (br *defaultBroker) Publish(pub Sender, msg *Publish) {
-	pubId := NewID()
+	pubID := NewID()
 	evtTemplate := Event{
-		Publication: pubId,
+		Publication: pubID,
 		Arguments:   msg.Arguments,
 		ArgumentsKw: msg.ArgumentsKw,
 		Details:     make(map[string]interface{}),
@@ -70,7 +72,7 @@ subscriber:
 
 	// only send published message if acknowledge is present and set to true
 	if doPub, _ := msg.Options["acknowledge"].(bool); doPub {
-		pub.Send(&Published{Request: msg.Request, Publication: pubId})
+		pub.Send(&Published{Request: msg.Request, Publication: pubID})
 	}
 }
 

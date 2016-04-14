@@ -24,11 +24,36 @@ type Realm struct {
 	Authenticators   map[string]Authenticator
 	// DefaultAuth      func(details map[string]interface{}) (map[string]interface{}, error)
 	AuthTimeout time.Duration
-	clients     map[string]Session
+	clients     map[ID]Session
+	localClient
+}
+
+type localClient struct {
+	*Client
+}
+
+func (r *Realm) getPeer(details map[string]interface{}) (Peer, error) {
+	peerA, peerB := localPipe()
+	sess := Session{Peer: peerA, Id: NewID(), Details: details, kill: make(chan URI, 1)}
+	if details == nil {
+		details = make(map[string]interface{})
+	}
+	go r.handleSession(sess)
+	log.Println("Established internal session:", sess)
+	return peerB, nil
+}
+
+// Close disconnects all clients after sending a goodbye message
+func (r Realm) Close() {
+	for _, client := range r.clients {
+		client.kill <- ErrSystemShutdown
+	}
 }
 
 func (r *Realm) init() {
-	r.clients = make(map[string]Session)
+	r.clients = make(map[ID]Session)
+	p, _ := r.getPeer(nil)
+	r.localClient.Client = NewClient(p)
 	if r.Broker == nil {
 		r.Broker = NewDefaultBroker()
 	}
@@ -46,9 +71,26 @@ func (r *Realm) init() {
 	}
 }
 
-func (r *Realm) handleSession(sess Session, details map[string]interface{}) {
-	defer r.Broker.RemoveSubscriber(&sess)
+// func (r *Realm) metaHandler(c *Client) {
+// }
 
+func (l *localClient) onJoin(details map[string]interface{}) {
+	l.Publish("wamp.session.on_join", nil, []interface{}{details}, nil)
+}
+
+func (l *localClient) onLeave(session ID) {
+	l.Publish("wamp.session.on_leave", nil, []interface{}{session}, nil)
+}
+
+func (r *Realm) handleSession(sess Session) {
+	r.clients[sess.Id] = sess
+	r.onJoin(sess.Details)
+	defer func() {
+		delete(r.clients, sess.Id)
+		r.Dealer.RemovePeer(sess.Peer)
+		r.onLeave(sess.Id)
+		r.Broker.RemoveSubscriber(&sess)
+	}()
 	c := sess.Receive()
 	// TODO: what happens if the realm is closed?
 
@@ -69,7 +111,7 @@ func (r *Realm) handleSession(sess Session, details map[string]interface{}) {
 		}
 
 		log.Printf("[%s] %s: %+v", sess, msg.MessageType(), msg)
-		if isAuthz, err := r.Authorizer.Authorize(sess.Id, msg, details); !isAuthz {
+		if isAuthz, err := r.Authorizer.Authorize(sess, msg); !isAuthz {
 			errMsg := &Error{Type: msg.MessageType()}
 			if err != nil {
 				errMsg.Error = ErrAuthorizationFailed
@@ -82,7 +124,7 @@ func (r *Realm) handleSession(sess Session, details map[string]interface{}) {
 			continue
 		}
 
-		r.Interceptor.Intercept(sess.Id, &msg, details)
+		r.Interceptor.Intercept(sess, &msg)
 
 		switch msg := msg.(type) {
 		case *Goodbye:
@@ -123,12 +165,6 @@ func (r *Realm) handleSession(sess Session, details map[string]interface{}) {
 	}
 }
 
-func (r Realm) Close() {
-	for _, client := range r.clients {
-		client.kill <- ErrSystemShutdown
-	}
-}
-
 func (r *Realm) handleAuth(client Peer, details map[string]interface{}) (*Welcome, error) {
 	msg, err := r.authenticate(details)
 	if err != nil {
@@ -137,23 +173,22 @@ func (r *Realm) handleAuth(client Peer, details map[string]interface{}) (*Welcom
 	// we should never get anything besides WELCOME and CHALLENGE
 	if msg.MessageType() == WELCOME {
 		return msg.(*Welcome), nil
-	} else {
-		// Challenge response
-		challenge := msg.(*Challenge)
-		if err := client.Send(challenge); err != nil {
-			return nil, err
-		}
+	}
+	// Challenge response
+	challenge := msg.(*Challenge)
+	if err := client.Send(challenge); err != nil {
+		return nil, err
+	}
 
-		msg, err := GetMessageTimeout(client, r.AuthTimeout)
-		if err != nil {
-			return nil, err
-		}
-		log.Printf("%s: %+v", msg.MessageType(), msg)
-		if authenticate, ok := msg.(*Authenticate); !ok {
-			return nil, fmt.Errorf("unexpected %s message received", msg.MessageType())
-		} else {
-			return r.checkResponse(challenge, authenticate)
-		}
+	msg, err = GetMessageTimeout(client, r.AuthTimeout)
+	if err != nil {
+		return nil, err
+	}
+	log.Printf("%s: %+v", msg.MessageType(), msg)
+	if authenticate, ok := msg.(*Authenticate); !ok {
+		return nil, fmt.Errorf("unexpected %s message received", msg.MessageType())
+	} else {
+		return r.checkResponse(challenge, authenticate)
 	}
 }
 
@@ -200,15 +235,15 @@ func (r Realm) authenticate(details map[string]interface{}) (Message, error) {
 }
 
 // checkResponse determines whether the response to the challenge is sufficient to gain access to the Realm.
-func (r Realm) checkResponse(challenge *Challenge, authenticate *Authenticate) (*Welcome, error) {
-	if auth, ok := r.CRAuthenticators[challenge.AuthMethod]; !ok {
+func (r Realm) checkResponse(chal *Challenge, auth *Authenticate) (*Welcome, error) {
+	authenticator, ok := r.CRAuthenticators[chal.AuthMethod]
+	if !ok {
 		return nil, fmt.Errorf("authentication method has been removed")
+	}
+	if details, err := authenticator.Authenticate(chal.Extra, auth.Signature); err != nil {
+		return nil, err
 	} else {
-		if details, err := auth.Authenticate(challenge.Extra, authenticate.Signature); err != nil {
-			return nil, err
-		} else {
-			return &Welcome{Details: addAuthMethod(details, challenge.AuthMethod)}, nil
-		}
+		return &Welcome{Details: addAuthMethod(details, chal.AuthMethod)}, nil
 	}
 }
 
