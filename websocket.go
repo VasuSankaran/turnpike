@@ -17,27 +17,27 @@ type websocketPeer struct {
 	closed      bool
 }
 
-// NewWebsocketPeer connects to the websocket server at the specified url.
-func NewWebsocketPeer(serialization Serialization, url, origin string, tlscfg *tls.Config) (Peer, error) {
+func NewWebsocketPeer(serialization Serialization, url, origin string, tlscfg *tls.Config,  netDial NetDialFunc) (Peer, error) {
 	switch serialization {
 	case JSON:
 		return newWebsocketPeer(url, jsonWebsocketProtocol, origin,
-			new(JSONSerializer), websocket.TextMessage, tlscfg,
+			new(JSONSerializer), websocket.TextMessage, tlscfg, netDial,
 		)
 	case MSGPACK:
 		return newWebsocketPeer(url, msgpackWebsocketProtocol, origin,
-			new(MessagePackSerializer), websocket.BinaryMessage, tlscfg,
+			new(MessagePackSerializer), websocket.BinaryMessage, tlscfg, netDial,
 		)
 	default:
 		return nil, fmt.Errorf("Unsupported serialization: %v", serialization)
 	}
 }
 
-func newWebsocketPeer(url, protocol, origin string, serializer Serializer, payloadType int, tlscfg *tls.Config) (Peer, error) {
+func newWebsocketPeer(url, protocol, origin string, serializer Serializer, payloadType int, tlscfg *tls.Config, netDial NetDialFunc) (Peer, error) {
 	dialer := websocket.Dialer{
 		Subprotocols:    []string{protocol},
 		TLSClientConfig: tlscfg,
 		Proxy:           http.ProxyFromEnvironment,
+		NetDial:         netDial,
 	}
 	conn, _, err := dialer.Dial(url, nil)
 	if err != nil {
