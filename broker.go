@@ -17,11 +17,11 @@ type Broker interface {
 
 // A super simple broker that matches URIs to Subscribers.
 type defaultBroker struct {
-	lock          sync.RWMutex
 	options       map[URI]map[ID]map[string]interface{}
 	routes        map[URI]map[ID]Sender
 	subscriptions map[ID]URI
 	senderSubs    map[Sender]map[ID]struct{}
+	lock          sync.RWMutex
 }
 
 // NewDefaultBroker initializes and returns a simple broker that matches URIs to
@@ -49,7 +49,6 @@ func (br *defaultBroker) Publish(pub Sender, msg *Publish) {
 	}
 
 	br.lock.RLock()
-	defer br.lock.RUnlock()
 subscriber:
 	for id, sub := range br.routes[msg.Topic] {
 		// don't send event to publisher
@@ -69,6 +68,7 @@ subscriber:
 		event.Subscription = id
 		sub.Send(&event)
 	}
+	br.lock.RUnlock()
 
 	// only send published message if acknowledge is present and set to true
 	if doPub, _ := msg.Options["acknowledge"].(bool); doPub {
@@ -78,10 +78,9 @@ subscriber:
 
 // Subscribe subscribes the client to the given topic.
 func (br *defaultBroker) Subscribe(sub Sender, msg *Subscribe) {
-	br.lock.Lock()
-	defer br.lock.Unlock()
-
 	id := NewID()
+
+	br.lock.Lock()
 	route, ok := br.routes[msg.Topic]
 	if !ok {
 		br.routes[msg.Topic] = make(map[ID]Sender)
@@ -104,16 +103,16 @@ func (br *defaultBroker) Subscribe(sub Sender, msg *Subscribe) {
 	subs[id] = struct{}{}
 
 	br.subscriptions[id] = msg.Topic
+	br.lock.Unlock()
 
 	sub.Send(&Subscribed{Request: msg.Request, Subscription: id})
 }
 
 func (br *defaultBroker) Unsubscribe(sub Sender, msg *Unsubscribe) {
 	br.lock.Lock()
-	defer br.lock.Unlock()
-
 	topic, ok := br.subscriptions[msg.Subscription]
 	if !ok {
+		br.lock.Unlock()
 		err := &Error{
 			Type:    msg.MessageType(),
 			Request: msg.Request,
@@ -160,6 +159,7 @@ func (br *defaultBroker) Unsubscribe(sub Sender, msg *Unsubscribe) {
 			delete(br.senderSubs, sub)
 		}
 	}
+	br.lock.Unlock()
 
 	sub.Send(&Unsubscribed{Request: msg.Request})
 }

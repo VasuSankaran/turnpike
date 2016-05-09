@@ -173,27 +173,27 @@ func (r *Realm) handleSession(sess Session) {
 
 		// Broker messages
 		case *Publish:
-			r.acts <- func() { r.Broker.Publish(&sess, msg) }
+			r.Broker.Publish(&sess, msg)
 		case *Subscribe:
-			r.acts <- func() { r.Broker.Subscribe(&sess, msg) }
+			r.Broker.Subscribe(&sess, msg)
 		case *Unsubscribe:
-			r.acts <- func() { r.Broker.Unsubscribe(&sess, msg) }
+			r.Broker.Unsubscribe(&sess, msg)
 
 		// Dealer messages
 		case *Register:
-			r.acts <- func() { r.Dealer.Register(sess.Peer, msg) }
+			r.Dealer.Register(sess.Peer, msg)
 		case *Unregister:
-			r.acts <- func() { r.Dealer.Unregister(sess.Peer, msg) }
+			r.Dealer.Unregister(sess.Peer, msg)
 		case *Call:
-			r.acts <- func() { r.Dealer.Call(sess.Peer, msg) }
+			r.Dealer.Call(sess.Peer, msg)
 		case *Yield:
-			r.acts <- func() { r.Dealer.Yield(sess.Peer, msg) }
+			r.Dealer.Yield(sess.Peer, msg)
 
 		// Error messages
 		case *Error:
 			if msg.Type == INVOCATION {
 				// the only type of ERROR message the router should receive
-				r.acts <- func() { r.Dealer.Error(sess.Peer, msg) }
+				r.Dealer.Error(sess.Peer, msg)
 			} else {
 				log.Printf("invalid ERROR message received: %v", msg)
 			}

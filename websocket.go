@@ -4,6 +4,7 @@ import (
 	"crypto/tls"
 	"fmt"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -15,9 +16,10 @@ type websocketPeer struct {
 	messages    chan Message
 	payloadType int
 	closed      bool
+	sendMutex   sync.Mutex
 }
 
-func NewWebsocketPeer(serialization Serialization, url, origin string, tlscfg *tls.Config,  netDial NetDialFunc) (Peer, error) {
+func NewWebsocketPeer(serialization Serialization, url, origin string, tlscfg *tls.Config, netDial NetDialFunc) (Peer, error) {
 	switch serialization {
 	case JSON:
 		return newWebsocketPeer(url, jsonWebsocketProtocol, origin,
@@ -60,6 +62,8 @@ func (ep *websocketPeer) Send(msg Message) error {
 	if err != nil {
 		return err
 	}
+	ep.sendMutex.Lock()
+	defer ep.sendMutex.Unlock()
 	return ep.conn.WriteMessage(ep.payloadType, b)
 }
 func (ep *websocketPeer) Receive() <-chan Message {
