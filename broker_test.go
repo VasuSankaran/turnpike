@@ -41,8 +41,6 @@ func TestSubscribe(t *testing.T) {
 			So(topic, ShouldEqual, testTopic)
 			_, ok = broker.routes[testTopic]
 			So(ok, ShouldBeTrue)
-			_, ok = broker.options[testTopic]
-			So(ok, ShouldBeTrue)
 			_, ok = broker.sessions[sess]
 			So(ok, ShouldBeTrue)
 		})
@@ -74,8 +72,6 @@ func TestUnsubscribe(t *testing.T) {
 			So(ok, ShouldBeFalse)
 			_, ok = broker.routes[testTopic]
 			So(ok, ShouldBeFalse)
-			_, ok = broker.options[testTopic]
-			So(ok, ShouldBeFalse)
 			_, ok = broker.sessions[sess]
 			So(ok, ShouldBeFalse)
 		})
@@ -104,14 +100,10 @@ func TestRemove(t *testing.T) {
 			So(ok, ShouldBeFalse)
 			_, ok = broker.routes[testTopic]
 			So(ok, ShouldBeFalse)
-			_, ok = broker.options[testTopic]
-			So(ok, ShouldBeFalse)
 
 			_, ok = broker.subscriptions[sub2]
 			So(ok, ShouldBeFalse)
 			_, ok = broker.routes[testTopic2]
-			So(ok, ShouldBeFalse)
-			_, ok = broker.options[testTopic2]
 			So(ok, ShouldBeFalse)
 
 			_, ok = broker.sessions[sess]
