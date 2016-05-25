@@ -20,6 +20,7 @@ type defaultBroker struct {
 	routes        map[URI]map[ID]route
 	subscriptions map[ID]URI
 	sessions      map[*Session]map[ID]struct{}
+	Interceptor   BrokerInterceptor
 	lock          sync.RWMutex
 }
 
@@ -30,11 +31,12 @@ type route struct {
 
 // NewDefaultBroker initializes and returns a simple broker that matches URIs to
 // Subscribers.
-func NewDefaultBroker() Broker {
+func NewDefaultBroker() *defaultBroker {
 	return &defaultBroker{
 		routes:        make(map[URI]map[ID]route),
 		subscriptions: make(map[ID]URI),
 		sessions:      make(map[*Session]map[ID]struct{}),
+		Interceptor:   NewDefaultBrokerInterceptor(),
 	}
 }
 
@@ -52,17 +54,9 @@ func (br *defaultBroker) Publish(pub *Session, msg *Publish) {
 	}
 
 	br.lock.RLock()
-subscriber:
 	for id, route := range br.routes[msg.Topic] {
-		// don't send event to publisher
-		if route.session == pub {
+		if !br.Interceptor.ShouldPublish(pub, route.session, route.options, msg) {
 			continue
-		}
-
-		for option, pubValue := range msg.Options {
-			if subValue, ok := route.options[option]; ok && subValue != pubValue {
-				continue subscriber
-			}
 		}
 
 		// shallow-copy the template
