@@ -125,7 +125,7 @@ func (r *Realm) handleSession(sess Session) {
 	defer func() {
 		r.acts <- func() {
 			delete(r.clients, sess.Id)
-			r.Dealer.RemovePeer(sess.Peer)
+			r.Dealer.RemovePeer(&sess)
 			r.onLeave(sess.Id)
 			r.Broker.RemoveSubscriber(&sess)
 		}
@@ -150,7 +150,7 @@ func (r *Realm) handleSession(sess Session) {
 		}
 
 		log.Printf("[%s] %s: %+v", sess, msg.MessageType(), msg)
-		if isAuthz, err := r.Authorizer.Authorize(sess, msg); !isAuthz {
+		if isAuthz, err := r.Authorizer.Authorize(&sess, msg); !isAuthz {
 			errMsg := &Error{Type: msg.MessageType()}
 			if err != nil {
 				errMsg.Error = ErrAuthorizationFailed
@@ -163,7 +163,7 @@ func (r *Realm) handleSession(sess Session) {
 			continue
 		}
 
-		r.Interceptor.Intercept(sess, &msg)
+		r.Interceptor.Intercept(&sess, &msg)
 
 		switch msg := msg.(type) {
 		case *Goodbye:
@@ -181,19 +181,19 @@ func (r *Realm) handleSession(sess Session) {
 
 		// Dealer messages
 		case *Register:
-			r.Dealer.Register(sess.Peer, msg)
+			r.Dealer.Register(&sess, msg)
 		case *Unregister:
-			r.Dealer.Unregister(sess.Peer, msg)
+			r.Dealer.Unregister(&sess, msg)
 		case *Call:
-			r.Dealer.Call(sess.Peer, msg)
+			r.Dealer.Call(&sess, msg)
 		case *Yield:
-			r.Dealer.Yield(sess.Peer, msg)
+			r.Dealer.Yield(&sess, msg)
 
 		// Error messages
 		case *Error:
 			if msg.Type == INVOCATION {
 				// the only type of ERROR message the router should receive
-				r.Dealer.Error(sess.Peer, msg)
+				r.Dealer.Error(&sess, msg)
 			} else {
 				log.Printf("invalid ERROR message received: %v", msg)
 			}

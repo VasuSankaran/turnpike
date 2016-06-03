@@ -6,32 +6,37 @@ import "sync"
 // from Publishers to Subscribers.
 type Broker interface {
 	// Publishes a message to all Subscribers.
-	Publish(Sender, *Publish)
+	Publish(*Session, *Publish)
 	// Subscribes to messages on a URI.
-	Subscribe(Sender, *Subscribe)
+	Subscribe(*Session, *Subscribe)
 	// Unsubscribes from messages on a URI.
-	Unsubscribe(Sender, *Unsubscribe)
+	Unsubscribe(*Session, *Unsubscribe)
 	// Removes all subscriptions of the subscriber.
-	RemoveSubscriber(Sender)
+	RemoveSubscriber(*Session)
 }
 
 // A super simple broker that matches URIs to Subscribers.
 type defaultBroker struct {
-	options       map[URI]map[ID]map[string]interface{}
-	routes        map[URI]map[ID]Sender
+	routes        map[URI]map[ID]*route
 	subscriptions map[ID]URI
-	senderSubs    map[Sender]map[ID]struct{}
+	sessions      map[*Session]map[ID]struct{}
+	Distributor   BrokerDistributor
 	lock          sync.RWMutex
+}
+
+type route struct {
+	session *Session
+	options map[string]interface{}
 }
 
 // NewDefaultBroker initializes and returns a simple broker that matches URIs to
 // Subscribers.
-func NewDefaultBroker() Broker {
+func NewDefaultBroker() *defaultBroker {
 	return &defaultBroker{
-		options:       make(map[URI]map[ID]map[string]interface{}),
-		routes:        make(map[URI]map[ID]Sender),
+		routes:        make(map[URI]map[ID]*route),
 		subscriptions: make(map[ID]URI),
-		senderSubs:    make(map[Sender]map[ID]struct{}),
+		sessions:      make(map[*Session]map[ID]struct{}),
+		Distributor:   NewDefaultBrokerDistributor(),
 	}
 }
 
@@ -39,7 +44,7 @@ func NewDefaultBroker() Broker {
 //
 // If msg.Options["acknowledge"] == true, the publisher receives a Published event
 // after the message has been sent to all subscribers.
-func (br *defaultBroker) Publish(pub Sender, msg *Publish) {
+func (br *defaultBroker) Publish(pub *Session, msg *Publish) {
 	pubID := NewID()
 	evtTemplate := Event{
 		Publication: pubID,
@@ -49,24 +54,15 @@ func (br *defaultBroker) Publish(pub Sender, msg *Publish) {
 	}
 
 	br.lock.RLock()
-subscriber:
-	for id, sub := range br.routes[msg.Topic] {
-		// don't send event to publisher
-		if sub == pub {
+	for id, route := range br.routes[msg.Topic] {
+		if !br.Distributor.ShouldPublish(pub, route.session, route.options, msg) {
 			continue
-		}
-
-		subOptions := br.options[msg.Topic][id]
-		for option, pubValue := range msg.Options {
-			if subValue, ok := subOptions[option]; ok && subValue != pubValue {
-				continue subscriber
-			}
 		}
 
 		// shallow-copy the template
 		event := evtTemplate
 		event.Subscription = id
-		sub.Send(&event)
+		route.session.Send(&event)
 	}
 	br.lock.RUnlock()
 
@@ -77,30 +73,26 @@ subscriber:
 }
 
 // Subscribe subscribes the client to the given topic.
-func (br *defaultBroker) Subscribe(sub Sender, msg *Subscribe) {
+func (br *defaultBroker) Subscribe(sub *Session, msg *Subscribe) {
 	id := NewID()
 
 	br.lock.Lock()
-	route, ok := br.routes[msg.Topic]
+	r, ok := br.routes[msg.Topic]
 	if !ok {
-		br.routes[msg.Topic] = make(map[ID]Sender)
-		route = br.routes[msg.Topic]
+		br.routes[msg.Topic] = make(map[ID]*route)
+		r = br.routes[msg.Topic]
 	}
-	route[id] = sub
+	r[id] = &route{
+		session: sub,
+		options: msg.Options,
+	}
 
-	option, ok := br.options[msg.Topic]
+	s, ok := br.sessions[sub]
 	if !ok {
-		br.options[msg.Topic] = make(map[ID]map[string]interface{})
-		option = br.options[msg.Topic]
+		s = make(map[ID]struct{})
+		br.sessions[sub] = s
 	}
-	option[id] = msg.Options
-
-	subs, ok := br.senderSubs[sub]
-	if !ok {
-		subs = make(map[ID]struct{})
-		br.senderSubs[sub] = subs
-	}
-	subs[id] = struct{}{}
+	s[id] = struct{}{}
 
 	br.subscriptions[id] = msg.Topic
 	br.lock.Unlock()
@@ -108,7 +100,7 @@ func (br *defaultBroker) Subscribe(sub Sender, msg *Subscribe) {
 	sub.Send(&Subscribed{Request: msg.Request, Subscription: id})
 }
 
-func (br *defaultBroker) Unsubscribe(sub Sender, msg *Unsubscribe) {
+func (br *defaultBroker) Unsubscribe(sub *Session, msg *Unsubscribe) {
 	br.lock.Lock()
 	topic, ok := br.subscriptions[msg.Subscription]
 	if !ok {
@@ -136,27 +128,15 @@ func (br *defaultBroker) Unsubscribe(sub Sender, msg *Unsubscribe) {
 		}
 	}
 
-	// clean up options
-	if o, ok := br.options[topic]; !ok {
-		log.Printf("Error unsubscribing: unable to find options for %s topic", topic)
-	} else if _, ok := o[msg.Subscription]; !ok {
-		log.Printf("Error unsubscribing: %s options does not exist for %v subscription", topic, msg.Subscription)
-	} else {
-		delete(o, msg.Subscription)
-		if len(o) == 0 {
-			delete(br.options, topic)
-		}
-	}
-
 	// clean up sender's subscription
-	if s, ok := br.senderSubs[sub]; !ok {
+	if s, ok := br.sessions[sub]; !ok {
 		log.Println("Error unsubscribing: unable to find sender's subscriptions")
 	} else if _, ok := s[msg.Subscription]; !ok {
 		log.Printf("Error unsubscribing: sender does not contain %s subscription", msg.Subscription)
 	} else {
 		delete(s, msg.Subscription)
 		if len(s) == 0 {
-			delete(br.senderSubs, sub)
+			delete(br.sessions, sub)
 		}
 	}
 	br.lock.Unlock()
@@ -164,11 +144,11 @@ func (br *defaultBroker) Unsubscribe(sub Sender, msg *Unsubscribe) {
 	sub.Send(&Unsubscribed{Request: msg.Request})
 }
 
-func (br *defaultBroker) RemoveSubscriber(sub Sender) {
+func (br *defaultBroker) RemoveSubscriber(sub *Session) {
 	br.lock.Lock()
 	defer br.lock.Unlock()
 
-	for id, _ := range br.senderSubs[sub] {
+	for id, _ := range br.sessions[sub] {
 		topic, ok := br.subscriptions[id]
 		if !ok {
 			continue
@@ -184,16 +164,6 @@ func (br *defaultBroker) RemoveSubscriber(sub Sender) {
 				}
 			}
 		}
-
-		// clean up options
-		if o, ok := br.options[topic]; ok {
-			if _, ok := o[id]; ok {
-				delete(o, id)
-				if len(o) == 0 {
-					delete(br.options, topic)
-				}
-			}
-		}
 	}
-	delete(br.senderSubs, sub)
+	delete(br.sessions, sub)
 }
