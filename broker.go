@@ -17,10 +17,10 @@ type Broker interface {
 
 // A super simple broker that matches URIs to Subscribers.
 type defaultBroker struct {
-	routes        map[URI]map[ID]route
+	routes        map[URI]map[ID]*route
 	subscriptions map[ID]URI
 	sessions      map[*Session]map[ID]struct{}
-	Interceptor   BrokerInterceptor
+	Distributor   BrokerDistributor
 	lock          sync.RWMutex
 }
 
@@ -33,10 +33,10 @@ type route struct {
 // Subscribers.
 func NewDefaultBroker() *defaultBroker {
 	return &defaultBroker{
-		routes:        make(map[URI]map[ID]route),
+		routes:        make(map[URI]map[ID]*route),
 		subscriptions: make(map[ID]URI),
 		sessions:      make(map[*Session]map[ID]struct{}),
-		Interceptor:   NewDefaultBrokerInterceptor(),
+		Distributor:   NewDefaultBrokerDistributor(),
 	}
 }
 
@@ -55,7 +55,7 @@ func (br *defaultBroker) Publish(pub *Session, msg *Publish) {
 
 	br.lock.RLock()
 	for id, route := range br.routes[msg.Topic] {
-		if !br.Interceptor.ShouldPublish(pub, route.session, route.options, msg) {
+		if !br.Distributor.ShouldPublish(pub, route.session, route.options, msg) {
 			continue
 		}
 
@@ -79,10 +79,10 @@ func (br *defaultBroker) Subscribe(sub *Session, msg *Subscribe) {
 	br.lock.Lock()
 	r, ok := br.routes[msg.Topic]
 	if !ok {
-		br.routes[msg.Topic] = make(map[ID]route)
+		br.routes[msg.Topic] = make(map[ID]*route)
 		r = br.routes[msg.Topic]
 	}
-	r[id] = route{
+	r[id] = &route{
 		session: sub,
 		options: msg.Options,
 	}

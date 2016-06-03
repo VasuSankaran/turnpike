@@ -1,18 +1,18 @@
 package turnpike
 
-// BrokerInterceptor is the interface that intercepts broker events
-type BrokerInterceptor interface {
+// BrokerDistributor is the interface that intercepts broker events
+type BrokerDistributor interface {
 	ShouldPublish(pub, sub *Session, options map[string]interface{}, msg *Publish) bool
 }
 
-type defaultBrokerInterceptor struct{}
+type defaultBrokerDistributor struct{}
 
 // NewDefaultBrokerInterceptor returns a simple broker interceptor
-func NewDefaultBrokerInterceptor() *defaultBrokerInterceptor {
-	return &defaultBrokerInterceptor{}
+func NewDefaultBrokerDistributor() *defaultBrokerDistributor {
+	return &defaultBrokerDistributor{}
 }
 
-func (bi *defaultBrokerInterceptor) ShouldPublish(pub, sub *Session, options map[string]interface{}, msg *Publish) bool {
+func (bi *defaultBrokerDistributor) ShouldPublish(pub, sub *Session, options map[string]interface{}, msg *Publish) bool {
 	// don't send event to publisher
 	if sub == pub {
 		return false
