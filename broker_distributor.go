@@ -2,7 +2,7 @@ package turnpike
 
 // BrokerDistributor is the interface that intercepts broker events
 type BrokerDistributor interface {
-	ShouldPublish(pub, sub *Session, options map[string]interface{}, msg *Publish) bool
+	GetPublishRoutes(pub *Session, routes map[ID]*Route, msg *Publish) map[ID]*Route
 }
 
 type defaultBrokerDistributor struct{}
@@ -12,17 +12,24 @@ func NewDefaultBrokerDistributor() *defaultBrokerDistributor {
 	return &defaultBrokerDistributor{}
 }
 
-func (bi *defaultBrokerDistributor) ShouldPublish(pub, sub *Session, options map[string]interface{}, msg *Publish) bool {
-	// don't send event to publisher
-	if sub == pub {
-		return false
-	}
+func (bi *defaultBrokerDistributor) GetPublishRoutes(pub *Session, routes map[ID]*Route, msg *Publish) map[ID]*Route {
+	sendRoutes := make(map[ID]*Route)
 
-	for option, pubValue := range msg.Options {
-		if subValue, ok := options[option]; ok && subValue != pubValue {
-			return false
+outer:
+	for id, route := range routes {
+		// don't send event to publisher
+		if route.Session == pub {
+			continue
 		}
+
+		for option, pubValue := range msg.Options {
+			if subValue, ok := route.Options[option]; ok && subValue != pubValue {
+				continue outer
+			}
+		}
+
+		sendRoutes[id] = route
 	}
 
-	return true
+	return sendRoutes
 }
