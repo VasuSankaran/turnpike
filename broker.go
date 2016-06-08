@@ -17,26 +17,24 @@ type Broker interface {
 
 // A super simple broker that matches URIs to Subscribers.
 type defaultBroker struct {
-	routes        map[URI]map[ID]*Route
+	routes        map[URI]map[ID]*route
 	subscriptions map[ID]URI
 	sessions      map[*Session]map[ID]struct{}
-	Distributor   BrokerDistributor
 	lock          sync.RWMutex
 }
 
-type Route struct {
-	Session *Session
-	Options map[string]interface{}
+type route struct {
+	session *Session
+	options map[string]interface{}
 }
 
 // NewDefaultBroker initializes and returns a simple broker that matches URIs to
 // Subscribers.
-func NewDefaultBroker() *defaultBroker {
+func NewDefaultBroker() Broker {
 	return &defaultBroker{
-		routes:        make(map[URI]map[ID]*Route),
+		routes:        make(map[URI]map[ID]*route),
 		subscriptions: make(map[ID]URI),
 		sessions:      make(map[*Session]map[ID]struct{}),
-		Distributor:   NewDefaultBrokerDistributor(),
 	}
 }
 
@@ -54,15 +52,25 @@ func (br *defaultBroker) Publish(pub *Session, msg *Publish) {
 	}
 
 	br.lock.RLock()
-	routes := br.Distributor.GetPublishRoutes(pub, br.routes[msg.Topic], msg)
-	br.lock.RUnlock()
+subscriber:
+	for id, route := range br.routes[msg.Topic] {
+		// don't send event to publisher
+		if route.session == pub {
+			continue
+		}
 
-	for id, route := range routes {
+		for option, pubValue := range msg.Options {
+			if subValue, ok := route.options[option]; ok && subValue != pubValue {
+				continue subscriber
+			}
+		}
+
 		// shallow-copy the template
 		event := evtTemplate
 		event.Subscription = id
-		route.Session.Send(&event)
+		route.session.Send(&event)
 	}
+	br.lock.RUnlock()
 
 	// only send published message if acknowledge is present and set to true
 	if doPub, _ := msg.Options["acknowledge"].(bool); doPub {
@@ -77,12 +85,12 @@ func (br *defaultBroker) Subscribe(sub *Session, msg *Subscribe) {
 	br.lock.Lock()
 	r, ok := br.routes[msg.Topic]
 	if !ok {
-		br.routes[msg.Topic] = make(map[ID]*Route)
+		br.routes[msg.Topic] = make(map[ID]*route)
 		r = br.routes[msg.Topic]
 	}
-	r[id] = &Route{
-		Session: sub,
-		Options: msg.Options,
+	r[id] = &route{
+		session: sub,
+		options: msg.Options,
 	}
 
 	s, ok := br.sessions[sub]

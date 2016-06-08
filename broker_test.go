@@ -22,7 +22,7 @@ func (s *TestPeer) Close() error            { return nil }
 
 func TestSubscribe(t *testing.T) {
 	Convey("Subscribing to a topic", t, func() {
-		broker := NewDefaultBroker()
+		broker := NewDefaultBroker().(*defaultBroker)
 		subscriber := &TestPeer{}
 		sess := &Session{Peer: subscriber}
 		testTopic := URI("turnpike.test.topic")
@@ -50,7 +50,7 @@ func TestSubscribe(t *testing.T) {
 }
 
 func TestUnsubscribe(t *testing.T) {
-	broker := NewDefaultBroker()
+	broker := NewDefaultBroker().(*defaultBroker)
 	subscriber := &TestPeer{}
 	testTopic := URI("turnpike.test.topic")
 	msg := &Subscribe{Request: 123, Topic: testTopic}
@@ -79,7 +79,7 @@ func TestUnsubscribe(t *testing.T) {
 }
 
 func TestRemove(t *testing.T) {
-	broker := NewDefaultBroker()
+	broker := NewDefaultBroker().(*defaultBroker)
 	subscriber := &TestPeer{}
 	sess := &Session{Peer: subscriber}
 	testTopic := URI("turnpike.test.topic")
