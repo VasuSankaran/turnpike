@@ -19,27 +19,27 @@ type websocketPeer struct {
 	sendMutex   sync.Mutex
 }
 
-func NewWebsocketPeer(serialization Serialization, url, origin string, tlscfg *tls.Config, netDial NetDialFunc) (Peer, error) {
+func NewWebsocketPeer(serialization Serialization, url string, tlscfg *tls.Config, dial DialFunc) (Peer, error) {
 	switch serialization {
 	case JSON:
-		return newWebsocketPeer(url, jsonWebsocketProtocol, origin,
-			new(JSONSerializer), websocket.TextMessage, tlscfg, netDial,
+		return newWebsocketPeer(url, jsonWebsocketProtocol,
+			new(JSONSerializer), websocket.TextMessage, tlscfg, dial,
 		)
 	case MSGPACK:
-		return newWebsocketPeer(url, msgpackWebsocketProtocol, origin,
-			new(MessagePackSerializer), websocket.BinaryMessage, tlscfg, netDial,
+		return newWebsocketPeer(url, msgpackWebsocketProtocol,
+			new(MessagePackSerializer), websocket.BinaryMessage, tlscfg, dial,
 		)
 	default:
 		return nil, fmt.Errorf("Unsupported serialization: %v", serialization)
 	}
 }
 
-func newWebsocketPeer(url, protocol, origin string, serializer Serializer, payloadType int, tlscfg *tls.Config, netDial NetDialFunc) (Peer, error) {
+func newWebsocketPeer(url, protocol string, serializer Serializer, payloadType int, tlscfg *tls.Config, dial DialFunc) (Peer, error) {
 	dialer := websocket.Dialer{
 		Subprotocols:    []string{protocol},
 		TLSClientConfig: tlscfg,
 		Proxy:           http.ProxyFromEnvironment,
-		NetDial:         netDial,
+		NetDial:         dial,
 	}
 	conn, _, err := dialer.Dial(url, nil)
 	if err != nil {

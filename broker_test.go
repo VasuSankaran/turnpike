@@ -11,12 +11,7 @@ type TestPeer struct {
 	sent     Message
 }
 
-func (s *TestPeer) Send(msg Message) error {
-	s.received = msg
-	return nil
-}
-
-// TODO: implement me
+func (s *TestPeer) Send(msg Message) error  { s.received = msg; return nil }
 func (s *TestPeer) Receive() <-chan Message { return nil }
 func (s *TestPeer) Close() error            { return nil }
 
@@ -93,7 +88,7 @@ func TestRemove(t *testing.T) {
 	sub2 := subscriber.received.(*Subscribed).Subscription
 
 	Convey("Removing subscriber", t, func() {
-		broker.RemoveSubscriber(sess)
+		broker.RemoveSession(sess)
 
 		Convey("The broker should have removed the subscription", func() {
 			_, ok := broker.subscriptions[sub]

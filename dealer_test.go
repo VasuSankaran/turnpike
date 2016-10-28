@@ -134,7 +134,7 @@ func TestRemovePeer(t *testing.T) {
 		So(dealer.procedures, ShouldContainKey, reg)
 
 		Convey("Calling RemoveSession should remove the registration", func() {
-			dealer.RemovePeer(sess)
+			dealer.RemoveSession(sess)
 			So(dealer.registrations, ShouldNotContainKey, testProcedure)
 			So(dealer.procedures, ShouldNotContainKey, reg)
 

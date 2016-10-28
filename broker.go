@@ -12,7 +12,7 @@ type Broker interface {
 	// Unsubscribes from messages on a URI.
 	Unsubscribe(*Session, *Unsubscribe)
 	// Removes all subscriptions of the subscriber.
-	RemoveSubscriber(*Session)
+	RemoveSession(*Session)
 }
 
 // A super simple broker that matches URIs to Subscribers.
@@ -51,11 +51,16 @@ func (br *defaultBroker) Publish(pub *Session, msg *Publish) {
 		Details:     make(map[string]interface{}),
 	}
 
+	excludePublisher := true
+	if exclude, ok := msg.Options["exclude_me"].(bool); ok {
+		excludePublisher = exclude
+	}
+
 	br.lock.RLock()
 subscriber:
 	for id, route := range br.routes[msg.Topic] {
 		// don't send event to publisher
-		if route.session == pub {
+		if route.session == pub && excludePublisher {
 			continue
 		}
 
@@ -138,7 +143,7 @@ func (br *defaultBroker) Unsubscribe(sub *Session, msg *Unsubscribe) {
 	if s, ok := br.sessions[sub]; !ok {
 		log.Println("Error unsubscribing: unable to find sender's subscriptions")
 	} else if _, ok := s[msg.Subscription]; !ok {
-		log.Printf("Error unsubscribing: sender does not contain %s subscription", msg.Subscription)
+		log.Printf("Error unsubscribing: sender does not contain %v subscription", msg.Subscription)
 	} else {
 		delete(s, msg.Subscription)
 		if len(s) == 0 {
@@ -150,7 +155,7 @@ func (br *defaultBroker) Unsubscribe(sub *Session, msg *Unsubscribe) {
 	sub.Send(&Unsubscribed{Request: msg.Request})
 }
 
-func (br *defaultBroker) RemoveSubscriber(sub *Session) {
+func (br *defaultBroker) RemoveSession(sub *Session) {
 	br.lock.Lock()
 	defer br.lock.Unlock()
 

@@ -15,7 +15,7 @@ type Dealer interface {
 	// Handle an ERROR message from an invocation
 	Error(*Session, *Error)
 	// Remove a callee's registrations
-	RemovePeer(*Session)
+	RemoveSession(*Session)
 }
 
 type remoteProcedure struct {
@@ -188,6 +188,7 @@ func (d *defaultDealer) Error(peer *Session, msg *Error) {
 			caller.Send(&Error{
 				Type:        CALL,
 				Request:     callID,
+				Error:       msg.Error,
 				Details:     make(map[string]interface{}),
 				Arguments:   msg.Arguments,
 				ArgumentsKw: msg.ArgumentsKw,
@@ -197,7 +198,7 @@ func (d *defaultDealer) Error(peer *Session, msg *Error) {
 	}
 }
 
-func (d *defaultDealer) RemovePeer(callee *Session) {
+func (d *defaultDealer) RemoveSession(callee *Session) {
 	d.lock.Lock()
 	defer d.lock.Unlock()
 	for reg := range d.callees[callee] {

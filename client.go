@@ -53,8 +53,8 @@ type eventDesc struct {
 
 // NewWebsocketClient creates a new websocket client connected to the specified
 // `url` and using the specified `serialization`.
-func NewWebsocketClient(serialization Serialization, url string, tlscfg *tls.Config, netDial NetDialFunc) (*Client, error) {
-	p, err := NewWebsocketPeer(serialization, url, "", tlscfg, netDial)
+func NewWebsocketClient(serialization Serialization, url string, tlscfg *tls.Config, dial DialFunc) (*Client, error) {
+	p, err := NewWebsocketPeer(serialization, url, tlscfg, dial)
 	if err != nil {
 		return nil, err
 	}
@@ -584,15 +584,24 @@ func (c *Client) Publish(topic string, options map[string]interface{}, args []in
 	})
 }
 
+type RPCError struct {
+	ErrorMessage *Error
+	Procedure    string
+}
+
+func (rpc RPCError) Error() string {
+	return fmt.Sprintf("error calling procedure '%v': %v: %v: %v", rpc.Procedure, rpc.ErrorMessage.Error, rpc.ErrorMessage.Arguments, rpc.ErrorMessage.ArgumentsKw)
+}
+
 // Call calls a procedure given a URI.
-func (c *Client) Call(procedure string, args []interface{}, kwargs map[string]interface{}) (*Result, error) {
+func (c *Client) Call(procedure string, options map[string]interface{}, args []interface{}, kwargs map[string]interface{}) (*Result, error) {
 	id := NewID()
 	c.registerListener(id)
 
 	call := &Call{
 		Request:     id,
 		Procedure:   URI(procedure),
-		Options:     make(map[string]interface{}),
+		Options:     options,
 		Arguments:   args,
 		ArgumentsKw: kwargs,
 	}
@@ -606,7 +615,7 @@ func (c *Client) Call(procedure string, args []interface{}, kwargs map[string]in
 	if msg, err = c.waitOnListener(id); err != nil {
 		return nil, err
 	} else if e, ok := msg.(*Error); ok {
-		return nil, fmt.Errorf("error calling procedure '%v': %v", procedure, e.Error)
+		return nil, RPCError{e, procedure}
 	} else if result, ok := msg.(*Result); !ok {
 		return nil, fmt.Errorf(formatUnexpectedMessage(msg, RESULT))
 	} else {
