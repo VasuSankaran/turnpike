@@ -65,7 +65,7 @@ subscriber:
 		}
 
 		for option, pubValue := range msg.Options {
-			if subValue, ok := route.options[option]; ok && subValue != pubValue {
+			if subValue, ok := route.options[option]; !ok || subValue != pubValue {
 				continue subscriber
 			}
 		}
