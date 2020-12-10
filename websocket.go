@@ -13,9 +13,13 @@ import (
 type websocketPeer struct {
 	conn        *websocket.Conn
 	serializer  Serializer
-	messages    chan Message
+	messagesIn  chan Message
+	messagesOut chan Message
+	outChBlocks bool
 	payloadType int
 	closed      bool
+	closedLock  sync.Mutex
+	done        chan struct{}
 	sendMutex   sync.Mutex
 }
 
@@ -47,17 +51,36 @@ func newWebsocketPeer(url, protocol string, serializer Serializer, payloadType i
 	}
 	ep := &websocketPeer{
 		conn:        conn,
-		messages:    make(chan Message, 10),
+		messagesIn:  make(chan Message, 10),
+		messagesOut: make(chan Message, 10),
+		done:        make(chan struct{}),
+		outChBlocks: true,
 		serializer:  serializer,
 		payloadType: payloadType,
 	}
-	go ep.run()
+	go ep.runReadMessages()
+	go ep.runWriteMessages()
 
 	return ep, nil
 }
 
-// TODO: make this just add the message to a channel so we don't block
 func (ep *websocketPeer) Send(msg Message) error {
+	if ep.outChBlocks {
+		ep.messagesOut <- msg
+	} else {
+		// To keep slow clients from impacting other clients, the server will drop messages if the buffer is full.
+		select {
+		case <-ep.done:
+		case ep.messagesOut <- msg:
+		default:
+			log.Println("websocket messagesOut is full so Server dropping msg")
+		}
+	}
+
+	return nil
+}
+
+func (ep *websocketPeer) doWriteMessage(msg Message) error {
 	b, err := ep.serializer.Serialize(msg)
 	if err != nil {
 		return err
@@ -66,8 +89,9 @@ func (ep *websocketPeer) Send(msg Message) error {
 	defer ep.sendMutex.Unlock()
 	return ep.conn.WriteMessage(ep.payloadType, b)
 }
+
 func (ep *websocketPeer) Receive() <-chan Message {
-	return ep.messages
+	return ep.messagesIn
 }
 func (ep *websocketPeer) Close() error {
 	closeMsg := websocket.FormatCloseMessage(websocket.CloseNormalClosure, "goodbye")
@@ -75,26 +99,32 @@ func (ep *websocketPeer) Close() error {
 	if err != nil {
 		log.Println("error sending close message:", err)
 	}
-	ep.closed = true
+	ep.closedLock.Lock()
+	defer ep.closedLock.Unlock()
+	if !ep.closed {
+		close(ep.done)
+		ep.closed = true
+	}
 	return ep.conn.Close()
 }
 
-func (ep *websocketPeer) run() {
+func (ep *websocketPeer) runReadMessages() {
 	for {
 		// TODO: use conn.NextMessage() and stream
 		// TODO: do something different based on binary/text frames
 		if msgType, b, err := ep.conn.ReadMessage(); err != nil {
-			if ep.closed {
+			select {
+			case <-ep.done:
 				log.Println("peer connection closed")
-			} else {
+			default:
 				log.Println("error reading from peer:", err)
 				ep.conn.Close()
 			}
-			close(ep.messages)
+			close(ep.messagesIn)
 			break
 		} else if msgType == websocket.CloseMessage {
 			ep.conn.Close()
-			close(ep.messages)
+			close(ep.messagesIn)
 			break
 		} else {
 			msg, err := ep.serializer.Deserialize(b)
@@ -102,8 +132,19 @@ func (ep *websocketPeer) run() {
 				log.Println("error deserializing peer message:", err)
 				// TODO: handle error
 			} else {
-				ep.messages <- msg
+				ep.messagesIn <- msg
 			}
+		}
+	}
+}
+
+func (ep *websocketPeer) runWriteMessages() {
+	for {
+		select {
+		case msg := <-ep.messagesOut:
+			ep.doWriteMessage(msg)
+		case <-ep.done:
+			return
 		}
 	}
 }
