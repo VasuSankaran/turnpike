@@ -66,7 +66,10 @@ func newWebsocketPeer(url, protocol string, serializer Serializer, payloadType i
 
 func (ep *websocketPeer) Send(msg Message) error {
 	if ep.outChBlocks {
-		ep.messagesOut <- msg
+		select {
+		case <-ep.done:
+		case ep.messagesOut <- msg:
+		}
 	} else {
 		// To keep slow clients from impacting other clients, the server will drop messages if the buffer is full.
 		select {
