@@ -37,7 +37,8 @@ func main() {
 	if duration, err := strconv.Atoi(text); err != nil {
 		log.Fatalln("invalid integer input:", err)
 	} else {
-		if _, err := c.Call("alarm.set", nil, []interface{}{duration}, nil); err != nil {
+		// Call method with disclose option for Caller Identification (https://tools.ietf.org/html/draft-oberstet-hybi-tavendo-wamp-02#section-13.3.5)
+		if _, err := c.Call("alarm.set", map[string]interface{}{"disclose_me": true}, []interface{}{duration}, nil); err != nil {
 			log.Fatalln("error setting alarm:", err)
 		}
 	}

@@ -3,6 +3,7 @@ package turnpike
 import (
 	"crypto/tls"
 	"fmt"
+	"net/http"
 	"time"
 )
 
@@ -53,8 +54,8 @@ type eventDesc struct {
 
 // NewWebsocketClient creates a new websocket client connected to the specified
 // `url` and using the specified `serialization`.
-func NewWebsocketClient(serialization Serialization, url string, tlscfg *tls.Config, dial DialFunc) (*Client, error) {
-	p, err := NewWebsocketPeer(serialization, url, tlscfg, dial)
+func NewWebsocketClient(serialization Serialization, url string, requestHeader http.Header, tlscfg *tls.Config, dial DialFunc) (*Client, error) {
+	p, err := NewWebsocketPeer(serialization, url, requestHeader, tlscfg, dial)
 	if err != nil {
 		return nil, err
 	}
@@ -391,6 +392,9 @@ type EventHandler func(args []interface{}, kwargs map[string]interface{})
 
 // Subscribe registers the EventHandler to be called for every message in the provided topic.
 func (c *Client) Subscribe(topic string, options map[string]interface{}, fn EventHandler) error {
+	if options == nil {
+		options = make(map[string]interface{})
+	}
 	id := NewID()
 	c.registerListener(id)
 	sub := &Subscribe{
@@ -575,6 +579,9 @@ func (c *Client) Unregister(procedure string) error {
 
 // Publish publishes an EVENT to all subscribed peers.
 func (c *Client) Publish(topic string, options map[string]interface{}, args []interface{}, kwargs map[string]interface{}) error {
+	if options == nil {
+		options = make(map[string]interface{})
+	}
 	return c.Send(&Publish{
 		Request:     NewID(),
 		Options:     options,
