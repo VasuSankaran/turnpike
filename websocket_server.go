@@ -100,7 +100,8 @@ func (s *WebsocketServer) GetLocalClient(realm string, details map[string]interf
 
 // ServeHTTP handles a new HTTP connection.
 func (s *WebsocketServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	log.Println("WebsocketServer.ServeHTTP", r.Method, r.RequestURI)
+	log.Output(1, fmt.Sprintf("WebsocketServer.ServeHTTP: begin %s", r.RemoteAddr))
+
 	// TODO: subprotocol?
 	conn, err := s.Upgrader.Upgrade(w, r, nil)
 	if err != nil {
@@ -108,7 +109,9 @@ func (s *WebsocketServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+	log.Output(1, fmt.Sprintf("WebsocketServer.ServeHTTP: done Upgrade %s", r.RemoteAddr))
 	s.handleWebsocket(conn)
+	log.Output(1, fmt.Sprintf("WebsocketServer.ServeHTTP: end %s", r.RemoteAddr))
 }
 
 func (s *WebsocketServer) handleWebsocket(conn *websocket.Conn) {
@@ -147,5 +150,6 @@ func (s *WebsocketServer) handleWebsocket(conn *websocket.Conn) {
 	go peer.runReadMessages()
 	go peer.runWriteMessages()
 
+	log.Output(1, fmt.Sprintf("WebsocketServer: accepting peer %s", conn.RemoteAddr()))
 	logErr(s.Router.Accept(&peer))
 }
