@@ -14,12 +14,14 @@ var (
 type Logger interface {
 	Println(v ...interface{})
 	Printf(format string, v ...interface{})
+	Output(calldepth int, s string) error
 }
 
 type noopLogger struct{}
 
 func (n noopLogger) Println(v ...interface{})               {}
 func (n noopLogger) Printf(format string, v ...interface{}) {}
+func (n noopLogger) Output(calldepth int, s string) error   { return nil }
 
 // setup logger for package, noop by default
 func init() {
