@@ -48,13 +48,8 @@ func SetLogger(l Logger) {
 }
 
 func logErr(err error) error {
-	if err == nil {
-		return nil
-	}
-	if l, ok := log.(*glog.Logger); ok {
-		l.Output(2, err.Error())
-	} else {
-		log.Println(err)
+	if err != nil {
+		log.Output(2, err.Error())
 	}
 	return err
 }
