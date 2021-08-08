@@ -99,7 +99,12 @@ func (r *defaultRouter) Accept(client Peer) error {
 		return fmt.Errorf("Router is closing, no new connections are allowed")
 	}
 
-	log.Output(1, "WAMP.Router.Accept: getting Hello message")
+	var remoteAddr string
+	wsPeer, ok := client.(*websocketPeer)
+	if ok {
+		remoteAddr = wsPeer.conn.RemoteAddr().String()
+	}
+	log.Output(1, fmt.Sprintf("WAMP.Router.Accept: getting Hello message - peer %s", remoteAddr))
 	msg, err := GetMessageTimeout(client, 5*time.Second)
 	if err != nil {
 		return err
@@ -120,7 +125,7 @@ func (r *defaultRouter) Accept(client Peer) error {
 		return NoSuchRealmError(hello.Realm)
 	}
 
-	log.Output(1, "WAMP.Router.Accept: authenticating")
+	log.Output(1, fmt.Sprintf("WAMP.Router.Accept: authenticating - peer %s", remoteAddr))
 	welcome, err := realm.handleAuth(client, hello.Details)
 	if err != nil {
 		abort := &Abort{
@@ -144,7 +149,7 @@ func (r *defaultRouter) Accept(client Peer) error {
 		}
 	}
 
-	log.Output(1, "WAMP.Router.Accept: sending Welcome message")
+	log.Output(1, fmt.Sprintf("WAMP.Router.Accept: sending Welcome message - peer %s", remoteAddr))
 	if err := client.Send(welcome); err != nil {
 		return err
 	}
@@ -158,12 +163,12 @@ func (r *defaultRouter) Accept(client Peer) error {
 		Details: welcome.Details,
 		kill:    make(chan URI, 1),
 	}
-	log.Output(1, fmt.Sprintf("WAMP.Router.Accept: established session %d", sess.Id))
+	log.Output(1, fmt.Sprintf("WAMP.Router.Accept: established session %d - peer %s", sess.Id, remoteAddr))
 
 	for _, callback := range r.sessionOpenCallbacks {
 		go callback(sess, string(hello.Realm))
 	}
-	log.Output(1, fmt.Sprintf("WAMP.Router.Accept: done session open callbacks %d", sess.Id))
+	log.Output(1, fmt.Sprintf("WAMP.Router.Accept: done session open callbacks - peer %s", remoteAddr))
 	go func() {
 		realm.handleSession(sess)
 		sess.Close()
@@ -171,7 +176,7 @@ func (r *defaultRouter) Accept(client Peer) error {
 			go callback(sess, string(hello.Realm))
 		}
 	}()
-	log.Output(1, fmt.Sprintf("WAMP.Router.Accept: end %d", sess.Id))
+	log.Output(1, fmt.Sprintf("WAMP.Router.Accept: end - peer %s", remoteAddr))
 	return nil
 }
 

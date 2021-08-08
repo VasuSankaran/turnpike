@@ -100,7 +100,7 @@ func (s *WebsocketServer) GetLocalClient(realm string, details map[string]interf
 
 // ServeHTTP handles a new HTTP connection.
 func (s *WebsocketServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	log.Output(1, fmt.Sprintf("WebsocketServer.ServeHTTP: begin %s", r.RemoteAddr))
+	log.Output(1, fmt.Sprintf("WebsocketServer.ServeHTTP: begin - peer %s", r.RemoteAddr))
 
 	// TODO: subprotocol?
 	conn, err := s.Upgrader.Upgrade(w, r, nil)
@@ -109,9 +109,9 @@ func (s *WebsocketServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	log.Output(1, fmt.Sprintf("WebsocketServer.ServeHTTP: done Upgrade %s", r.RemoteAddr))
+	log.Output(1, fmt.Sprintf("WebsocketServer.ServeHTTP: done Upgrade - peer %s", r.RemoteAddr))
 	s.handleWebsocket(conn)
-	log.Output(1, fmt.Sprintf("WebsocketServer.ServeHTTP: end %s", r.RemoteAddr))
+	log.Output(1, fmt.Sprintf("WebsocketServer.ServeHTTP: end - peer %s", r.RemoteAddr))
 }
 
 func (s *WebsocketServer) handleWebsocket(conn *websocket.Conn) {
